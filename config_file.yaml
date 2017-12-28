@@ -1,0 +1,8 @@
+%YAML:1.0
+VCR_NO: "01"             # 硬盘录像机编号
+IP: "192.168.1.229"      # 硬盘录像机IP地址
+UserName: "admin"        # 账号
+PassWord: "admin2308"    # 密码 
+channel_num:             # 摄像头的通道号，一行一个，以"- "开头
+   - 3
+
