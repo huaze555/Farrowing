@@ -29,7 +29,6 @@
 
 extern std::string CDWriter_NO;   //硬盘刻录机的所有通道的摄像头，公用同一个刻录机编号
 extern const std::string PIG_DETECT_MODEL_FOLD;   //保存仔猪检测模型的文件夹
-extern const std::string PIG_DIRECTION_MODEL_FOLD;   //保存母猪躺向模型的文件夹
 extern int CAMERA_NUM;        //实际测试的摄像头数量，从文件里读取
 
 //将目标框数目、图片和时间绑定
@@ -53,7 +52,7 @@ class PigDetector
 {
 public:
 	//***************** 公有变量部分 **************
-	cv::Rect bornArea;         //出生区域
+	
 	static std::map<unsigned, cv::Scalar> label_color; //不同类别对应的框的颜色
 	cv::Rect big_pig_rect;              //大猪的框
 
@@ -66,9 +65,9 @@ public:
 	unsigned getPigCounts()const{ return pigCounts; }
 	unsigned getChannelNo()const{ return CHANNEL_NO; }
 	std::string getIP()const{ return IP; }
+	cv::Rect getBornArea()const{ return bornArea; }
 	
-	
-	//***************** 共有静态函数 **************
+	//***************** 公有静态函数 **************
 	static std::string getTime(const time_t& t);  //获取时间
 	static std::string num2str(int i);
 	static void drawRect(cv::Mat& frame, const caffe::Frcnn::BBox<float>& box, bool drawOrder = true); //画框
@@ -84,17 +83,15 @@ private:
 	std::map<unsigned, unsigned> M;    //统计队列Q1各仔猪数量的帧数，比如M1[4]=20 表示有20帧检测结果为4只仔猪
 
 	unsigned long long realFrames;      //用于统计进行目标检测的帧数
-
-	bool first_process;       //是否是第一次处理，第一次处理需要检测出大猪的躺向
-    unsigned bornAreaDirection;       //出生区域方向，共6种， 0-1-2-3-4-5，分别代表左上，右上，左下，右下，正左，正右
 	
 	unsigned int pigCounts;        //当前确定已经出生仔猪的个数，初始化为0
 	bool hasBorn;           // 是否开始分娩，用于确定是否为第一只仔猪
 	char status;                // a: 第一只出生  b:非第一只出生   c:召回   d：消失    e：死猪   f:包衣
+	cv::Rect bornArea;         //出生区域
 
 	std::vector<caffe::Frcnn::BBox<float> > curResults, preResults;   //分别保存上一帧和当前帧的检测结果
 
-	static FRCNN_API::Detector* obj_detect;  //目标检测器
+	static std::shared_ptr<FRCNN_API::Detector> obj_detect;  //目标检测器
 
 	const std::string CDWriter_NO;    //硬盘刻录机编号
 	const std::string IP;          //摄像头的IP
@@ -176,7 +173,5 @@ namespace caffe
 	REGISTER_LAYER_CLASS(Reshape);
 
 }
-
-
 
 #endif

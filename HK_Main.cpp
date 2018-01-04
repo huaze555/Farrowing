@@ -4,7 +4,7 @@
 #include <mutex>
 #include "PigDetector.h"    // PigDetector.h必须在util.h之前！
 #include "Camera.h"
-
+#include <random>
 using namespace std;
 using namespace cv;
 using caffe::Frcnn::BBox;
@@ -14,8 +14,7 @@ mutex locker;
 const string CONFIG_FILE = "config_file.yaml";   //保存摄像头IP配置文件信息
 const string SAVED_FOLD = "saved_images\\";   //保存图片的文件夹
 //const string SAVED_FOLD = "C:\\Users\\Lab1060-i7\\Desktop\\母猪分娩智能监控\\PigImages\\source_files\\";   //保存图片的文件夹
-const string PIG_DETECT_MODEL_FOLD = "models\\pigDetect";   //保存仔猪检测模型的文件夹
-const string PIG_DIRECTION_MODEL_FOLD = "models\\pigDirection";   //保存母猪躺向模型的文件夹
+const string PIG_DETECT_MODEL_FOLD = "models";   //保存仔猪检测模型的文件夹
 const int MAX_NUM = 8;  //最多支持8路
 
 vector<Mat> g_frames;   //8路，每一路保存最新的帧
@@ -49,7 +48,11 @@ int main(int argc, char** argv)
 	try
 	{
 		readMsgFromFile(CONFIG_FILE);   //读取配置文件，保存各个摄像头的IP、账号、密码
-		
+		//初始化摄像头
+		NET_DVR_Init();
+		NET_DVR_SetConnectTime(5000, 1);    // ①初始化,必须的
+		NET_DVR_SetReconnect(10000, true);  //②设置连接时间与重连时间，可选
+
 		vector<thread> threads(CAMERA_NUM); //创建线程和图像帧全局变量
 		for (int i = 0; i < CAMERA_NUM; ++i)
 		{
@@ -61,7 +64,8 @@ int main(int argc, char** argv)
 		vector<PigDetector> detectors;    //最多8个跟踪器
 		for (int i = 0; i < CAMERA_NUM; ++i)
 			detectors.push_back(PigDetector(CDWriter_NO, camera_channels[i], IP, SAVED_FOLD));
-
+		uniform_int_distribution<int> u(-1, 2);
+		default_random_engine e;
 		while (true)
 		{
 			for (int i = 0; i < CAMERA_NUM; ++i)
@@ -69,13 +73,21 @@ int main(int argc, char** argv)
 				if (g_frames[i].data)
 				{
 					Mat tmp = g_frames[i].clone();         //!!!!!此处必须为拷贝	
-	
+					static int k = 0;
+					k++;
+					int label;
+					if (k % 20 == 0)
+					{
+						label = u(e);	
+					}
+					if (label != 2)
+						flip(tmp, tmp, label);
 					clock_t t = clock();
 					vector<BBox<float> > boxes = detectors[i].frameProcess(tmp);   //进行检测
 					//cout << clock() - t << endl;
 					detectors[i].drawRects(tmp, boxes, true); //画仔猪的框,以及跟踪序号
 					rectangle(tmp, detectors[i].big_pig_rect, Scalar(0, 255, 255),2);  //画大猪区域
-					rectangle(tmp, detectors[i].bornArea, Scalar(240, 32, 160),2);  //画出生区域
+					rectangle(tmp, detectors[i].getBornArea(), Scalar(240, 32, 160),2);  //画出生区域
 					imshow(num2str(detectors[i].getChannelNo()), tmp);
 				}
 			}

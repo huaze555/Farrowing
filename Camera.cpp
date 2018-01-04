@@ -547,62 +547,80 @@ Camera::~Camera()
 }
 void Camera::start()
 {
-	// ①初始化,必须的
-	NET_DVR_Init();
-	//②设置连接时间与重连时间，可选
-	NET_DVR_SetConnectTime(5000, 1);
-	NET_DVR_SetReconnect(10000, true);
-
-	//③ 注册设备，必选
-	NET_DVR_DEVICEINFO_V30 struDeviceInfo;
-	this->lUserID = NET_DVR_Login_V30(const_cast<char*>(IP.c_str()), 8000, const_cast<char*>(USERNAME.c_str()), const_cast<char*>(PASSWORD.c_str()), &struDeviceInfo);
-	if (lUserID < 0)
-		throw string("通道号" + num2str(CHANNEL_NUM) + ": " + "Login error, " + num2str(NET_DVR_GetLastError()));
-
-	//④设置异常回调函数
-	NET_DVR_SetExceptionCallBack_V30(0, NULL, g_ExceptionCallBack, NULL);
-
-	//⑤启动预览并设置摄像头回调数据流   ,主实时回调函数
-	NET_DVR_CLIENTINFO ClientInfo;
-	ClientInfo.lChannel = MAX_ANALOG_CHANNUM + this->CHANNEL_NUM;      //Channel number 设备通道号, MAX_ANALOG_CHANNUM=32，为最大通道数
-	ClientInfo.hPlayWnd = NULL;     //窗口为空，设备SDK不解码只取流
-	ClientInfo.lLinkMode = 0;       //Main Stream
-	ClientInfo.sMultiCastIP = NULL;
-
-
-	void (CALLBACK *fRealDataCallBack)(LONG lRealHandle, DWORD dwDataType, BYTE *pBuffer, DWORD dwBufSize, void *pUser) = fRealDataCallBack1;  //函数指针
-	switch (CHANNEL_NUM)
+	if (CHANNEL_NUM == 3)
 	{
-	case 1:
-		fRealDataCallBack = fRealDataCallBack1;
-		break;
-	case 2:
-		fRealDataCallBack = fRealDataCallBack2;
-		break;
-	case 3:
-		fRealDataCallBack = fRealDataCallBack3;
-		break;
-	case 4:
-		fRealDataCallBack = fRealDataCallBack4;
-		break;
-	case 5:
-		fRealDataCallBack = fRealDataCallBack5;
-		break;
-	case 6:
-		fRealDataCallBack = fRealDataCallBack6;
-		break;
-	case 7:
-		fRealDataCallBack = fRealDataCallBack7;
-		break;
-	case 8:
-		fRealDataCallBack = fRealDataCallBack8;
-		break;
-	default:
-		break;
+		using namespace cv;
+		VideoCapture capture("4.mp4");
+		Mat frame;
+		while (capture.read(frame))
+		{
+			double rate = Camera::FRAME_WIDTH * 1.0 / frame.cols;
+			resize(frame, frame, Size(), rate, rate);
+			//首先找到通道号channel_num摄像头对应的全局变量下标，再拷贝到该全局变量中
+			frame.copyTo(g_frames[find(camera_channels.begin(), camera_channels.end(), 3) - camera_channels.begin()]);
+			std::this_thread::sleep_for(std::chrono::milliseconds(35));
+		}
 	}
-	LONG lRealPlayHandle = NET_DVR_RealPlay_V30(lUserID, &ClientInfo, fRealDataCallBack, NULL, TRUE);
+	else
+	{
 
-	if (lRealPlayHandle < 0)
-		throw string("通道号" + num2str(CHANNEL_NUM) + ": " + " NET_DVR_RealPlay_V30 failed! Error number: " + num2str(NET_DVR_GetLastError()));
-	Sleep(-1);
+		// ①初始化,必须的
+		//NET_DVR_Init();
+		//②设置连接时间与重连时间，可选
+		/*NET_DVR_SetConnectTime(5000, 1);
+		NET_DVR_SetReconnect(10000, true);*/
+
+		//③ 注册设备，必选
+		NET_DVR_DEVICEINFO_V30 struDeviceInfo;
+		this->lUserID = NET_DVR_Login_V30(const_cast<char*>(IP.c_str()), 8000, const_cast<char*>(USERNAME.c_str()), const_cast<char*>(PASSWORD.c_str()), &struDeviceInfo);
+		if (lUserID < 0)
+			throw string("通道号" + num2str(CHANNEL_NUM) + ": " + "Login error, " + num2str(NET_DVR_GetLastError()));
+
+		//④设置异常回调函数
+		NET_DVR_SetExceptionCallBack_V30(0, NULL, g_ExceptionCallBack, NULL);
+
+		//⑤启动预览并设置摄像头回调数据流   ,主实时回调函数
+		NET_DVR_CLIENTINFO ClientInfo;
+		ClientInfo.lChannel = MAX_ANALOG_CHANNUM + this->CHANNEL_NUM;      //Channel number 设备通道号, MAX_ANALOG_CHANNUM=32，为最大通道数
+		ClientInfo.hPlayWnd = NULL;     //窗口为空，设备SDK不解码只取流
+		ClientInfo.lLinkMode = 0;       //Main Stream
+		ClientInfo.sMultiCastIP = NULL;
+
+
+		void (CALLBACK *fRealDataCallBack)(LONG lRealHandle, DWORD dwDataType, BYTE *pBuffer, DWORD dwBufSize, void *pUser) = fRealDataCallBack1;  //函数指针
+		switch (CHANNEL_NUM)
+		{
+		case 1:
+			fRealDataCallBack = fRealDataCallBack1;
+			break;
+		case 2:
+			fRealDataCallBack = fRealDataCallBack2;
+			break;
+		case 3:
+			fRealDataCallBack = fRealDataCallBack3;
+			break;
+		case 4:
+			fRealDataCallBack = fRealDataCallBack4;
+			break;
+		case 5:
+			fRealDataCallBack = fRealDataCallBack5;
+			break;
+		case 6:
+			fRealDataCallBack = fRealDataCallBack6;
+			break;
+		case 7:
+			fRealDataCallBack = fRealDataCallBack7;
+			break;
+		case 8:
+			fRealDataCallBack = fRealDataCallBack8;
+			break;
+		default:
+			break;
+		}
+		LONG lRealPlayHandle = NET_DVR_RealPlay_V30(lUserID, &ClientInfo, fRealDataCallBack, NULL, TRUE);
+
+		if (lRealPlayHandle < 0)
+			throw string("通道号" + num2str(CHANNEL_NUM) + ": " + " NET_DVR_RealPlay_V30 failed! Error number: " + num2str(NET_DVR_GetLastError()));
+		Sleep(-1);
+	}
 }

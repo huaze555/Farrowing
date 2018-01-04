@@ -1,5 +1,4 @@
 #include "PigDetector.h"
-#include "DirectionJudge.hpp"
 #include <cmath>
 #include <io.h>       //判定文件夹是否存在
 #include <direct.h>   //创建文件夹
@@ -16,14 +15,14 @@ using namespace caffe::Frcnn;
 //不同类别对应的框的颜色, 仔猪为类别0，红色； 大猪为类别1，黄色
 std::map<unsigned, cv::Scalar> PigDetector::label_color = { { 1, Scalar(0, 0, 255) }, { 2, Scalar(0, 255, 255) } };
 //目标检测模型
-FRCNN_API::Detector* PigDetector::obj_detect = new FRCNN_API::Detector
+std::shared_ptr<FRCNN_API::Detector> PigDetector::obj_detect = std::make_shared<FRCNN_API::Detector>
 (PIG_DETECT_MODEL_FOLD + "\\pigDetect.prototxt", PIG_DETECT_MODEL_FOLD + "\\pigDetect.caffemodel", PIG_DETECT_MODEL_FOLD + "\\pigDetect.json", true, true);
 
 
 //************** 非静态成员函数部分 **********
 PigDetector::PigDetector(const std::string& Writer_NO, unsigned camera_channel, const std::string& ip,
 	const std::string& saved_fold)
-	:CONTINUE_SECOND(10), K(5 * CONTINUE_SECOND / CAMERA_NUM), RATE(0.8), pigCounts(0), first_process(true),
+	:CONTINUE_SECOND(10), K(5 * CONTINUE_SECOND / CAMERA_NUM), RATE(0.8), pigCounts(0),
 	realFrames(0), hasBorn(false), CDWriter_NO(Writer_NO), CHANNEL_NO(camera_channel), IP(ip), SAVED_FOLD(saved_fold)
 {
 	static bool tag = true;
@@ -45,26 +44,16 @@ PigDetector::PigDetector(const std::string& Writer_NO, unsigned camera_channel, 
 vector<BBox<float> > PigDetector::frameProcess(const cv::Mat& _frame)
 {
 	Mat frame = _frame.clone();
-	//第一次处理需要检测出大猪的躺向
-	if (first_process)
-	{
-		DirectionJudge judger(PIG_DIRECTION_MODEL_FOLD + "\\pigDirection_deploy.prototxt",
-			PIG_DIRECTION_MODEL_FOLD + "\\pigDirection.caffemodel",
-			PIG_DIRECTION_MODEL_FOLD + "\\pigDirection_mean.binaryproto");
-		//出生区域方向，共6种， 0-1-2-3-4-5，分别代表左上，右上，左下，右下，正左，正右
-		this->bornAreaDirection = judger.judge(frame);
-		map<unsigned, string> m{ { 0, "左上" }, { 1, "右上" }, { 2, "左下" }, { 3, "右下" }, { 4, "正左" }, { 5, "正右" } };
-		cout << "摄像头通道号" << CHANNEL_NO << ", 出生区域在" << m[bornAreaDirection] << "方" << endl;
-		first_process = false;
-	}
-	vector<BBox<float> > wholeResults = PigDetector::obj_detect->predict(frame); //先检测所有类别
+
+	vector<BBox<float> > wholeResults = PigDetector::obj_detect->predict(frame); //先检测所有类别的框
 	//将仔猪框放在前面,大猪框放在后面, 返回第一个指向大猪框的迭代器
 	auto iter = std::partition(wholeResults.begin(), wholeResults.end(), [](const BBox<float>& box){return box.id == 1; }); //划分算法，Lamdba表达式
 	vector<BBox<float> > big_pig_boxes(iter, wholeResults.end());  //取出全部类别的框中属于母猪的框
-	if (big_pig_boxes.size() > 0)    //因为可能没有检测到大猪，所以需要加个判断
+	if (big_pig_boxes.size() > 0)    //因为可能没有检测到大猪，所以需要加个判断，理想情况下，只有一个大猪框
 	{
-		this->big_pig_rect = bbox2Rect(big_pig_boxes[0]);
-		this->setBornArea(frame.cols, frame.rows, big_pig_boxes[0]);
+		sort(big_pig_boxes.begin(), big_pig_boxes.end());   //将置信度高的放在前面
+		this->big_pig_rect = bbox2Rect(big_pig_boxes[0]);   //保存大猪区域， 
+		this->setBornArea(frame.cols, frame.rows, big_pig_boxes[0]);   //根据大猪躺向设置分娩区域
 	}
 
 	this->preResults = this->curResults;         //保存当前仔猪结果到上帧结果中
@@ -110,7 +99,7 @@ vector<BBox<float> > PigDetector::frameProcess(const cv::Mat& _frame)
 					}
 				}
 				if (inBornArea)   //有猪出现在出生区域, 还要进一步判断是第一只仔猪出生a还是非第一只仔猪出生b，	
-				{
+				{ 
 					if (!hasBorn&&pigCounts == 1)  //只有当刚开始出生，且检测到仔猪只有一只，才判定为新出生的第一只
 						this->status = 'a';
 					else                       //否则都判定为第二只新出生
@@ -167,7 +156,7 @@ vector<BBox<float> > PigDetector::frameProcess(const cv::Mat& _frame)
 			//保存那一帧，且画边框信息
 			drawRects(need_to_save.img, need_to_save.boxes, true);
 			if (this->status == 'a' || this->status == 'b')  //如果是新出生的仔猪，需要画绿色框
-			{
+			{	
 				rectangle(need_to_save.img, bbox2Rect(bornArea_box), Scalar(0, 255, 0), 2);
 				putText(need_to_save.img, num2str(bornArea_box.order + 1), cv::Point(bornArea_box[0], bornArea_box[1]), 1, 1.0, Scalar(0, 255, 0), 2);
 			}
@@ -228,49 +217,55 @@ bool PigDetector::atleast_one_in_born_area(const std::vector<BBox<float> >& boxe
 }
 //根据大猪位置设置出生区域
 void PigDetector::setBornArea(const int WIDTH, const int HEIGHT, const BBox<float>& big_pig_box){
-	int width = (big_pig_box[2] - big_pig_box[0]) / 8;  //以大猪框宽度的八分之一为小块
-	int height = (big_pig_box[3] - big_pig_box[1]) / 4;  //以大猪框的高度四分之一为小块
-	switch (bornAreaDirection)   //根据大猪屁股朝向进行分娩区域的精准划定
+	int _x1 = big_pig_box[0];
+	int _y1 = big_pig_box[1];
+	int _x2 = big_pig_box[2];
+	int _y2 = big_pig_box[3];
+	int width = (_x2 - _x1) / 8;  //以大猪框宽度的八分之一为小块
+	int height = (_y2 - _y1) / 4;  //以大猪框的高度四分之一为小块
+	int x1, y1, x2, y2;   //待出生区域的两个定点坐标
+	switch (big_pig_box.id)   //根据大猪躺的方向进行分娩区域的精准划定
 	{
-	case 0:  //左上
-		this->bornArea.x = std::max<int>(0, big_pig_box[0] - 2 * width);
-		this->bornArea.y = std::min<int>(0, big_pig_box[1] - height);
-		this->bornArea.width = 3 * width;
-		this->bornArea.height = 3 * height;
+	case 2:  //左上
+		x1 = std::max<int>(0, _x1 - 2 * width);
+		y1 = std::max<int>(0, _y1 - height);
+		x2 = _x1 + width;
+		y2 = _y1 + 2 * height;
 		break;
-	case 2:   //左下
-		this->bornArea.x = std::max<int>(0, big_pig_box[0] - 2 * width);
-		this->bornArea.y = (big_pig_box[1] + big_pig_box[3]) / 2;
-		this->bornArea.width = 3 * width;
-		this->bornArea.height = std::min<int>(HEIGHT - 1 - this->bornArea.y, 3 * height);
+	case 4:   //左下
+		x1 = std::max<int>(0, _x1 - 2 * width);
+		y1 = (_y1 + _y2) / 2;
+		x2 = _x1 + width;
+		y2 = std::min<int>(_y2 + height, HEIGHT - 1);
 		break;
-	case 1:   //右上
-		this->bornArea.x = big_pig_box[2] - width;
-		this->bornArea.y = std::min<int>(0, big_pig_box[1] - height);
-		this->bornArea.width = std::min<int>(WIDTH - 1 - this->bornArea.x, 3 * width);
-		this->bornArea.height = 3 * height;
+	case 3:   //右上
+		x1 = _x2 - width;
+		y1 = std::max<int>(0, _y1 - height);
+		x2 = std::min<int>(_x2 + 2 * width, WIDTH - 1);
+		y2 = (_y1 + _y2) / 2;
 		break;
-	case 3:   //右下
-		this->bornArea.x = big_pig_box[2] - width;
-		this->bornArea.y = (big_pig_box[1] + big_pig_box[3]) / 2;
-		this->bornArea.width = std::min<int>(WIDTH - 1 - this->bornArea.x, 3 * width);
-		this->bornArea.height = std::min<int>(HEIGHT - 1 - this->bornArea.y, 3 * height);
+	case 5:   //右下
+		x1 = _x2 - width;
+		y1 = (_y1 + _y2) / 2;
+		x2 = std::min<int>(_x2 + 2 * width, WIDTH - 1);
+		y2 = std::min<int>(_y2 + height, HEIGHT - 1);
 		break;
-	case 4:   //正左
-		this->bornArea.x = std::max<int>(0, big_pig_box[0] - 2 * width);
-		this->bornArea.y = big_pig_box[1];
-		this->bornArea.width = 3 * width;
-		this->bornArea.height = big_pig_box[3] - big_pig_box[1];
+	case 6:   //正左
+		x1 = std::max<int>(0, _x1 - 2 * width);
+		y1 = _y1;;
+		x2 = _x1 + width;
+		y2 = _y2;
 		break;
-	case 5:   //正右
-		this->bornArea.x = big_pig_box[2] - width;
-		this->bornArea.y = big_pig_box[1];
-		this->bornArea.width = std::min<int>(3 * width, WIDTH - 1 - bornArea.x);
-		this->bornArea.height = big_pig_box[3] - big_pig_box[1];
+	case 7:   //正右
+		x1 = _x2 - width;
+		y1 = _y1;
+		x2 = std::min<int>(_x2 + 2 * width, WIDTH - 1);
+		y2 = _y2;
 		break;
 	default:
 		break;
-	}
+	} 
+	this->bornArea = Rect(Point(x1, y1), Point(x2, y2));
 }
 
 //************** 静态成员函数部分 **********
