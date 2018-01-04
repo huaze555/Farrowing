@@ -4,7 +4,6 @@
 #include <mutex>
 #include "PigDetector.h"    // PigDetector.h必须在util.h之前！
 #include "Camera.h"
-#include <random>
 using namespace std;
 using namespace cv;
 using caffe::Frcnn::BBox;
@@ -64,8 +63,7 @@ int main(int argc, char** argv)
 		vector<PigDetector> detectors;    //最多8个跟踪器
 		for (int i = 0; i < CAMERA_NUM; ++i)
 			detectors.push_back(PigDetector(CDWriter_NO, camera_channels[i], IP, SAVED_FOLD));
-		uniform_int_distribution<int> u(-1, 2);
-		default_random_engine e;
+	
 		while (true)
 		{
 			for (int i = 0; i < CAMERA_NUM; ++i)
@@ -73,15 +71,6 @@ int main(int argc, char** argv)
 				if (g_frames[i].data)
 				{
 					Mat tmp = g_frames[i].clone();         //!!!!!此处必须为拷贝	
-					static int k = 0;
-					k++;
-					int label;
-					if (k % 20 == 0)
-					{
-						label = u(e);	
-					}
-					if (label != 2)
-						flip(tmp, tmp, label);
 					clock_t t = clock();
 					vector<BBox<float> > boxes = detectors[i].frameProcess(tmp);   //进行检测
 					//cout << clock() - t << endl;
