@@ -6,6 +6,7 @@
 #include <fstream>
 #include <stdio.h>  //删除文件函数remove 需要此文件头
 #include <cstdlib>
+#include <climits>
 using namespace std;
 using namespace cv;
 using namespace caffe::Frcnn;
@@ -322,7 +323,7 @@ void PigDetector::pairBBox(const vector<BBox<float> >& lastBBox, vector<BBox<flo
 	if (curNum <= lastNum){
 		//对当前帧的结果的每一个目标框，依次寻找上一帧最近的目标框，并赋予序号
 		for (int i = 0; i < curNum; ++i){
-			int minDis = 1000000000;
+			int minDis = INT_MAX;
 			int minIndex;
 			for (int j = 0; j < lastNum; ++j){
 				if (availableIndex[lastBBox[j].order] == true){  //如果第j个猪的id可用
@@ -339,7 +340,7 @@ void PigDetector::pairBBox(const vector<BBox<float> >& lastBBox, vector<BBox<flo
 	}
 	else{  // curNum>lastNum
 		for (int i = 0; i < lastNum; ++i){
-			int minDis = 1000000000;
+			int minDis = INT_MAX;
 			int minIndex;
 			for (int j = 0; j < curNum; ++j){
 				if (currentBBox[j].order == -1){   //如果第j个猪的id可用

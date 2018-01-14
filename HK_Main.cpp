@@ -4,6 +4,7 @@
 #include <mutex>
 #include "PigDetector.h"    // PigDetector.h必须在util.h之前！
 #include "Camera.h"
+#include <random>
 using namespace std;
 using namespace cv;
 using caffe::Frcnn::BBox;
@@ -63,7 +64,6 @@ int main(int argc, char** argv)
 		vector<PigDetector> detectors;    //最多8个跟踪器
 		for (int i = 0; i < CAMERA_NUM; ++i)
 			detectors.push_back(PigDetector(CDWriter_NO, camera_channels[i], IP, SAVED_FOLD));
-	
 		while (true)
 		{
 			for (int i = 0; i < CAMERA_NUM; ++i)
@@ -88,6 +88,7 @@ int main(int argc, char** argv)
 	{
 		cout << "发生异常，异常信息为: \" " << msg << " \"" << endl;
 	}
+	system("pause");
 	return 0;
 }
 
